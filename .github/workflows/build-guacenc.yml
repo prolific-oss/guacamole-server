@@ -35,20 +35,34 @@ jobs:
       - name: Generate Image ID
         id: set-image-id
         run: |
+          set -euo pipefail
           SHORT_SHA=$(git rev-parse --short=7 HEAD)
           IMAGE_BASE="${{ env.REGISTRY_HOST }}/${{ env.REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}"
 
+          # Docker tags: lowercase [a-z0-9_.-], max 128 chars.
+          sanitize_tag() {
+            echo "$1" \
+              | tr '[:upper:]' '[:lower:]' \
+              | sed -E 's/[^a-z0-9_.-]+/-/g; s/^-+//; s/-+$//; s/-+/-/g' \
+              | cut -c1-128
+          }
+
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            IMAGE_ID="$(date +%Y.%m.%d).${GITHUB_RUN_NUMBER}.${SHORT_SHA}"
+            IMAGE_ID="$(sanitize_tag "$(date +%Y.%m.%d).${GITHUB_RUN_NUMBER}.${SHORT_SHA}")"
             IS_MAIN=true
           elif [[ -n "${{ github.head_ref }}" ]]; then
             BRANCH_NAME="${{ github.head_ref }}"
-            IMAGE_ID="${BRANCH_NAME//\//-}-${SHORT_SHA}"
+            IMAGE_ID="$(sanitize_tag "${BRANCH_NAME}-${SHORT_SHA}")"
             IS_MAIN=false
           else
             BRANCH_NAME="${GITHUB_REF#refs/heads/}"
-            IMAGE_ID="${BRANCH_NAME//\//-}-${SHORT_SHA}"
+            IMAGE_ID="$(sanitize_tag "${BRANCH_NAME}-${SHORT_SHA}")"
             IS_MAIN=false
+          fi
+
+          if [[ -z "${IMAGE_ID}" ]]; then
+            echo "sanitized IMAGE_ID is empty" >&2
+            exit 1
           fi
 
           echo "image_id=${IMAGE_ID}" >> "$GITHUB_OUTPUT"
@@ -92,6 +106,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Push by digest only (no named tags) so matrix builds cannot touch :latest.
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@v6
@@ -99,11 +114,9 @@ jobs:
           context: .
           file: guacenc/Dockerfile
           platforms: ${{ matrix.platform }}
-          push: true
-          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY_HOST }}/${{ env.REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             IMAGE_ID=${{ needs.meta.outputs.image_id }}
-          tags: ${{ env.REGISTRY_HOST }}/${{ env.REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}
 
       - name: Export digest
         run: |
@@ -154,13 +167,21 @@ jobs:
           IMAGE_REF: ${{ needs.meta.outputs.image_ref }}
           IMAGE_BASE: ${{ env.REGISTRY_HOST }}/${{ env.REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}
           IS_MAIN: ${{ needs.meta.outputs.is_main }}
+          EXPECTED_DIGESTS: "2"
         run: |
           set -euo pipefail
+          shopt -s nullglob
           cd /tmp/digests
           digests=()
           for digest_file in *; do
             digests+=("${IMAGE_BASE}@sha256:${digest_file}")
           done
+
+          if [[ "${#digests[@]}" -ne "${EXPECTED_DIGESTS}" ]]; then
+            echo "expected ${EXPECTED_DIGESTS} digests, found ${#digests[@]}: ${digests[*]:-}" >&2
+            ls -la /tmp/digests >&2 || true
+            exit 1
+          fi
 
           echo "Creating manifest for ${IMAGE_REF} from: ${digests[*]}"
           docker buildx imagetools create -t "${IMAGE_REF}" "${digests[@]}"
