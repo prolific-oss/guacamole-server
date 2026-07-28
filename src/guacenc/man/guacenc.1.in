@@ -26,6 +26,7 @@ guacenc \- Guacamole video encoder
 [\fB-s\fR \fIWIDTH\fRx\fIHEIGHT\fR]
 [\fB-r\fR \fIBITRATE\fR]
 [\fB-f\fR]
+[\fB--h264\fR]
 [\fB--start-sync-index\fR \fIINDEX\fR]
 [\fB--end-sync-index\fR \fIINDEX\fR]
 [\fB--timeline-origin\fR \fITIMESTAMP\fR]
@@ -78,6 +79,11 @@ Overrides the default behavior of
 .B guacenc
 such that input files will be encoded even if they appear to be recordings of
 in-progress Guacamole sessions.
+.TP
+\fB--h264\fR
+Encode raw Annex-B H.264 instead of MPEG-4 Part 2. The stream is fixed at 25
+frames per second with no B-frames, a 25-frame GOP, AUD access-unit delimiters,
+and SPS/PPS repeated before each IDR frame.
 .TP
 \fB--start-sync-index\fR \fIINDEX\fR
 Replays, without rendering, all accepted display sync events before the given

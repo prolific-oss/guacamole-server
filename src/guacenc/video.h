@@ -91,6 +91,16 @@ typedef struct guacenc_video {
     AVFrame* next_frame;
 
     /**
+     * Reusable RGB source frame used for color conversion and scaling.
+     */
+    AVFrame* source_frame;
+
+    /**
+     * Reusable software scaling context matching source/destination geometry.
+     */
+    struct SwsContext* sws_context;
+
+    /**
      * The presentation timestamp that should be used for the next frame. This
      * is equivalent to the frame number.
      */

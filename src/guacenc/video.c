@@ -28,6 +28,7 @@
 #include <libavformat/avformat.h>
 #endif
 #include <libavutil/common.h>
+#include <libavutil/dict.h>
 #include <libavutil/imgutils.h>
 #include <libswscale/swscale.h>
 #include <guacamole/client.h>
@@ -79,10 +80,13 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
     }
     video_stream->id = container_format_context->nb_streams - 1;
 
+    bool h264 = strcmp(codec_name, "libx264") == 0;
+
     /* Retrieve encoding context */
     AVCodecContext* avcodec_context =
             guacenc_build_avcodeccontext(video_stream, codec, bitrate, width,
-                    height, /*gop size*/ 10, /*qmax*/ 31, /*qmin*/ 2,
+                    height, /*gop size*/ h264 ? 25 : 10,
+                    /*qmax*/ 31, /*qmin*/ 2,
                     /*pix fmt*/ AV_PIX_FMT_YUV420P,
                     /*time base*/ (AVRational) { 1, GUACENC_VIDEO_FRAMERATE });
 
@@ -97,11 +101,33 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
         avcodec_context->flags |= GUACENC_FLAG_GLOBAL_HEADER;
     }
 
+    /*
+     * MCAP packetization requires decode order to match display order. Each
+     * H.264 access unit is prefixed by an AUD, and every IDR repeats SPS/PPS
+     * so independently encoded windows remain self-contained after concat.
+     * One encoder thread per guacenc process prevents the outer window worker
+     * pool from oversubscribing available CPUs.
+     */
+    AVDictionary* codec_options = NULL;
+    if (h264) {
+        avcodec_context->max_b_frames = 0;
+        avcodec_context->thread_count = 1;
+        av_dict_set(&codec_options, "preset", "ultrafast", 0);
+        av_dict_set(&codec_options, "x264-params",
+                "keyint=25:min-keyint=25:scenecut=0:"
+                "repeat-headers=1:aud=1:bframes=0:"
+                "sliced-threads=0:threads=1",
+                0);
+    }
+
     /* Open codec for use */
-    if (guacenc_open_avcodec(avcodec_context, codec, NULL, video_stream) < 0) {
+    if (guacenc_open_avcodec(avcodec_context, codec,
+                h264 ? &codec_options : NULL, video_stream) < 0) {
+        av_dict_free(&codec_options);
         guacenc_log(GUAC_LOG_ERROR, "Failed to open codec \"%s\".", codec_name);
         goto fail_codec_open;
     }
+    av_dict_free(&codec_options);
 
     /* Allocate corresponding frame */
     AVFrame* frame = av_frame_alloc();
@@ -147,6 +173,8 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
     video->context = avcodec_context;
     video->container_format_context = container_format_context;
     video->next_frame = frame;
+    video->source_frame = NULL;
+    video->sws_context = NULL;
     video->width = width;
     video->height = height;
     video->bitrate = bitrate;
@@ -306,12 +334,11 @@ int guacenc_video_advance_timeline(guacenc_video* video,
  *     fit the destination, resulting in extra space on the sides).
  *
  * @return
- *     A pointer to a newly-allocated AVFrame containing exactly the same image
- *     data as the given buffer. The image data within the frame and the frame
- *     itself must be manually freed later.
+ *     A pointer to the reusable source AVFrame containing exactly the same
+ *     image data as the given buffer. The frame remains owned by the video.
  */
-static AVFrame* guacenc_video_frame_convert(guacenc_buffer* buffer, int lsize,
-        int psize) {
+static AVFrame* guacenc_video_frame_convert(guacenc_video* video,
+        guacenc_buffer* buffer, int lsize, int psize) {
 
     /* Init size of left/right pillarboxes */
     int left = psize;
@@ -321,21 +348,33 @@ static AVFrame* guacenc_video_frame_convert(guacenc_buffer* buffer, int lsize,
     int top = lsize;
     int bottom = lsize;
 
-    /* Prepare source frame for buffer */
-    AVFrame* frame = av_frame_alloc();
-    if (frame == NULL)
-        return NULL;
+    int frame_width = buffer->width + left + right;
+    int frame_height = buffer->height + top + bottom;
 
-    /* Copy buffer properties to frame */
-    frame->format = AV_PIX_FMT_RGB32;
-    frame->width = buffer->width + left + right;
-    frame->height = buffer->height + top + bottom;
+    /* Reallocate the reusable source frame only if its geometry changed */
+    AVFrame* frame = video->source_frame;
+    if (frame == NULL
+            || frame->width != frame_width
+            || frame->height != frame_height) {
+        if (frame != NULL) {
+            av_freep(&frame->data[0]);
+            av_frame_free(&frame);
+        }
 
-    /* Allocate actual backing data for frame */
-    if (av_image_alloc(frame->data, frame->linesize, frame->width,
-                frame->height, frame->format, 32) < 0) {
-        av_frame_free(&frame);
-        return NULL;
+        frame = av_frame_alloc();
+        if (frame == NULL)
+            return NULL;
+
+        frame->format = AV_PIX_FMT_RGB32;
+        frame->width = frame_width;
+        frame->height = frame_height;
+        if (av_image_alloc(frame->data, frame->linesize, frame->width,
+                    frame->height, frame->format, 32) < 0) {
+            av_frame_free(&frame);
+            return NULL;
+        }
+
+        video->source_frame = frame;
     }
 
     /* Flush any pending operations */
@@ -434,7 +473,7 @@ void guacenc_video_prepare_frame(guacenc_video* video, guacenc_buffer* buffer) {
     }
 
     /* Prepare source frame for buffer */
-    AVFrame* src = guacenc_video_frame_convert(buffer, lsize, psize);
+    AVFrame* src = guacenc_video_frame_convert(video, buffer, lsize, psize);
     if (src == NULL) {
         guacenc_log(GUAC_LOG_WARNING, "Failed to allocate source frame. "
                 "Frame dropped.");
@@ -442,29 +481,25 @@ void guacenc_video_prepare_frame(guacenc_video* video, guacenc_buffer* buffer) {
     }
 
     /* Prepare scaling context */
-    struct SwsContext* sws = sws_getContext(src->width, src->height,
+    int sws_flags = video->context->codec_id == AV_CODEC_ID_H264
+                  ? SWS_FAST_BILINEAR
+                  : SWS_BICUBIC;
+    struct SwsContext* sws = sws_getCachedContext(video->sws_context,
+            src->width, src->height,
             AV_PIX_FMT_RGB32, dst->width, dst->height, AV_PIX_FMT_YUV420P,
-            SWS_BICUBIC, NULL, NULL, NULL);
+            sws_flags, NULL, NULL, NULL);
+    video->sws_context = sws;
 
     /* Abort if scaling context could not be created */
     if (sws == NULL) {
         guacenc_log(GUAC_LOG_WARNING, "Failed to allocate software scaling "
                 "context. Frame dropped.");
-        av_freep(&src->data[0]);
-        av_frame_free(&src);
         return;
     }
 
     /* Apply scaling, copying the source frame to the destination */
     sws_scale(sws, (const uint8_t* const*) src->data, src->linesize,
             0, src->height, dst->data, dst->linesize);
-
-    /* Free scaling context */
-    sws_freeContext(sws);
-
-    /* Free source frame */
-    av_freep(&src->data[0]);
-    av_frame_free(&src);
 
 }
 
@@ -500,6 +535,12 @@ int guacenc_video_free(guacenc_video* video) {
     /* Free frame encoding data */
     av_freep(&video->next_frame->data[0]);
     av_frame_free(&video->next_frame);
+
+    if (video->source_frame != NULL) {
+        av_freep(&video->source_frame->data[0]);
+        av_frame_free(&video->source_frame);
+    }
+    sws_freeContext(video->sws_context);
 
     /* Clean up encoding context */
     if (video->context != NULL) {

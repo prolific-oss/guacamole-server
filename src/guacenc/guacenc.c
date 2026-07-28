@@ -34,7 +34,8 @@
 enum guacenc_option {
     GUACENC_OPTION_START_SYNC_INDEX = 0x100,
     GUACENC_OPTION_END_SYNC_INDEX,
-    GUACENC_OPTION_TIMELINE_ORIGIN
+    GUACENC_OPTION_TIMELINE_ORIGIN,
+    GUACENC_OPTION_H264
 };
 
 int main(int argc, char* argv[]) {
@@ -43,6 +44,7 @@ int main(int argc, char* argv[]) {
 
     /* Load defaults */
     bool force = false;
+    bool h264 = false;
     int width = GUACENC_DEFAULT_WIDTH;
     int height = GUACENC_DEFAULT_HEIGHT;
     int bitrate = GUACENC_DEFAULT_BITRATE;
@@ -64,6 +66,7 @@ int main(int argc, char* argv[]) {
             GUACENC_OPTION_END_SYNC_INDEX},
         {"timeline-origin", required_argument, NULL,
             GUACENC_OPTION_TIMELINE_ORIGIN},
+        {"h264", no_argument, NULL, GUACENC_OPTION_H264},
         {NULL, 0, NULL, 0}
     };
 
@@ -120,6 +123,10 @@ int main(int argc, char* argv[]) {
             timeline_origin_set = true;
         }
 
+        /* --h264: Encode raw Annex-B H.264 instead of MPEG-4 Part 2 */
+        else if (opt == GUACENC_OPTION_H264)
+            h264 = true;
+
         /* Invalid option */
         else {
             goto invalid_options;
@@ -174,8 +181,9 @@ int main(int argc, char* argv[]) {
 
     guacenc_log(GUAC_LOG_INFO, "%i input file(s) provided.", total_files);
 
-    guacenc_log(GUAC_LOG_INFO, "Video will be encoded at %ix%i "
-            "and %i bps.", width, height, bitrate);
+    guacenc_log(GUAC_LOG_INFO, "Video will be encoded as %s at %ix%i "
+            "and %i bps.", h264 ? "H.264 Annex-B" : "MPEG-4 Part 2",
+            width, height, bitrate);
 
     if (window_requested)
         guacenc_log(GUAC_LOG_INFO, "Encoding display sync events "
@@ -191,7 +199,8 @@ int main(int argc, char* argv[]) {
 
         /* Generate output filename */
         char out_path[4096];
-        int len = snprintf(out_path, sizeof(out_path), "%s.m4v", path);
+        int len = snprintf(out_path, sizeof(out_path), "%s.%s", path,
+                h264 ? "h264" : "m4v");
 
         /* Do not write if filename exceeds maximum length */
         if (len >= sizeof(out_path)) {
@@ -201,7 +210,7 @@ int main(int argc, char* argv[]) {
         }
 
         /* Attempt encoding, log granular success/failure at debug level */
-        if (guacenc_encode(path, out_path, "mpeg4",
+        if (guacenc_encode(path, out_path, h264 ? "libx264" : "mpeg4",
                     width, height, bitrate, force,
                     window_requested ? &window : NULL)) {
             failures++;
@@ -232,6 +241,7 @@ invalid_options:
             " [-s WIDTHxHEIGHT]"
             " [-r BITRATE]"
             " [-f]"
+            " [--h264]"
             " [--start-sync-index INDEX]"
             " [--end-sync-index INDEX]"
             " [--timeline-origin TIMESTAMP]"
