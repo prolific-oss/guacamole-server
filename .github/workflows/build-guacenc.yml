@@ -1,0 +1,194 @@
+name: Build and push guacenc image
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: guacenc-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY_HOST: us-east1-docker.pkg.dev
+  REGISTRY_REPOSITORY: prolific-infra-mgmt/desktop-trajectory-capture
+  IMAGE_NAME: guacenc
+  GCP_SERVICE_ACCOUNT: ci-github-nonprod@prolific-infra-mgmt.iam.gserviceaccount.com
+  WORKLOAD_IDENTITY_PROVIDER: projects/274607699786/locations/global/workloadIdentityPools/github-actions/providers/github-actions-prvdr
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  meta:
+    name: Compute image tags
+    runs-on: ubuntu-latest
+    outputs:
+      image_id: ${{ steps.set-image-id.outputs.image_id }}
+      image_ref: ${{ steps.set-image-id.outputs.image_ref }}
+      is_main: ${{ steps.set-image-id.outputs.is_main }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate Image ID
+        id: set-image-id
+        run: |
+          set -euo pipefail
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          IMAGE_BASE="${{ env.REGISTRY_HOST }}/${{ env.REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}"
+
+          # Docker tags: lowercase [a-z0-9_.-], max 128 chars.
+          sanitize_tag() {
+            echo "$1" \
+              | tr '[:upper:]' '[:lower:]' \
+              | sed -E 's/[^a-z0-9_.-]+/-/g; s/^-+//; s/-+$//; s/-+/-/g' \
+              | cut -c1-128
+          }
+
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            IMAGE_ID="$(sanitize_tag "$(date +%Y.%m.%d).${GITHUB_RUN_NUMBER}.${SHORT_SHA}")"
+            IS_MAIN=true
+          elif [[ -n "${{ github.head_ref }}" ]]; then
+            BRANCH_NAME="${{ github.head_ref }}"
+            IMAGE_ID="$(sanitize_tag "${BRANCH_NAME}-${SHORT_SHA}")"
+            IS_MAIN=false
+          else
+            BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+            IMAGE_ID="$(sanitize_tag "${BRANCH_NAME}-${SHORT_SHA}")"
+            IS_MAIN=false
+          fi
+
+          if [[ -z "${IMAGE_ID}" ]]; then
+            echo "sanitized IMAGE_ID is empty" >&2
+            exit 1
+          fi
+
+          echo "image_id=${IMAGE_ID}" >> "$GITHUB_OUTPUT"
+          echo "image_ref=${IMAGE_BASE}:${IMAGE_ID}" >> "$GITHUB_OUTPUT"
+          echo "is_main=${IS_MAIN}" >> "$GITHUB_OUTPUT"
+          echo "IMAGE_ID=${IMAGE_ID}"
+          echo "IMAGE_REF=${IMAGE_BASE}:${IMAGE_ID}"
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: [meta]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux/amd64
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+          token_format: access_token
+
+      - name: Login to Artifact Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_HOST }}
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Push by digest only (no named tags) so matrix builds cannot touch :latest.
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: guacenc/Dockerfile
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.REGISTRY_HOST }}/${{ env.REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            IMAGE_ID=${{ needs.meta.outputs.image_id }}
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Merge multi-arch manifest
+    needs: [meta, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Authenticate to GCP
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+          token_format: access_token
+
+      - name: Login to Artifact Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_HOST }}
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create manifest and push tags
+        env:
+          IMAGE_REF: ${{ needs.meta.outputs.image_ref }}
+          IMAGE_BASE: ${{ env.REGISTRY_HOST }}/${{ env.REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}
+          IS_MAIN: ${{ needs.meta.outputs.is_main }}
+          EXPECTED_DIGESTS: "2"
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          cd /tmp/digests
+          digests=()
+          for digest_file in *; do
+            digests+=("${IMAGE_BASE}@sha256:${digest_file}")
+          done
+
+          if [[ "${#digests[@]}" -ne "${EXPECTED_DIGESTS}" ]]; then
+            echo "expected ${EXPECTED_DIGESTS} digests, found ${#digests[@]}: ${digests[*]:-}" >&2
+            ls -la /tmp/digests >&2 || true
+            exit 1
+          fi
+
+          echo "Creating manifest for ${IMAGE_REF} from: ${digests[*]}"
+          docker buildx imagetools create -t "${IMAGE_REF}" "${digests[@]}"
+
+          if [[ "${IS_MAIN}" == "true" ]]; then
+            echo "Also tagging ${IMAGE_BASE}:latest"
+            docker buildx imagetools create -t "${IMAGE_BASE}:latest" "${digests[@]}"
+          fi
+
+          docker buildx imagetools inspect "${IMAGE_REF}"
