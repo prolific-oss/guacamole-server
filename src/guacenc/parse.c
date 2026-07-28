@@ -20,9 +20,11 @@
 #include <guacamole/timestamp.h>
 
 #include <errno.h>
+#include <inttypes.h>
 #include <limits.h>
-#include <string.h>
+#include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 int guacenc_parse_int(char* arg, int* i) {
 
@@ -40,6 +42,40 @@ int guacenc_parse_int(char* arg, int* i) {
     *i = value;
 
     /* Parsing successful */
+    return 0;
+
+}
+
+int guacenc_parse_uint64(const char* arg, uint64_t* value) {
+
+    char* end;
+
+    /* Reject empty and negative values before calling strtoull() */
+    if (*arg == '\0' || *arg == '-')
+        return 1;
+
+    /* Parse string as an unsigned integer */
+    errno = 0;
+    uintmax_t parsed = strtoumax(arg, &end, 10);
+
+    /* Ignore number if invalid or outside the target type */
+    if (errno != 0 || parsed > UINT64_MAX || *end != '\0')
+        return 1;
+
+    *value = (uint64_t) parsed;
+    return 0;
+
+}
+
+int guacenc_parse_nonnegative_timestamp(const char* arg,
+        guac_timestamp* timestamp) {
+
+    uint64_t parsed;
+    if (guacenc_parse_uint64(arg, &parsed)
+            || parsed > (uint64_t) INT64_MAX)
+        return 1;
+
+    *timestamp = (guac_timestamp) parsed;
     return 0;
 
 }
@@ -87,4 +123,3 @@ guac_timestamp guacenc_parse_timestamp(const char* str) {
     return (guac_timestamp) (num * sign);
 
 }
-

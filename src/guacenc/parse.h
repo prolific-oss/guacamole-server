@@ -22,6 +22,8 @@
 
 #include <guacamole/timestamp.h>
 
+#include <stdint.h>
+
 /**
  * Parses a string into a single integer. Only positive integers are accepted.
  * The input string may be modified during parsing. A value will be stored in
@@ -39,6 +41,38 @@
  *     invalid.
  */
 int guacenc_parse_int(char* arg, int* i);
+
+/**
+ * Parses a string into an unsigned 64-bit integer. Only decimal,
+ * non-negative integers are accepted.
+ *
+ * @param arg
+ *     The string to parse.
+ *
+ * @param value
+ *     A pointer to the integer in which the parsed value should be stored.
+ *
+ * @return
+ *     Zero if parsing was successful, non-zero if the provided string was
+ *     invalid.
+ */
+int guacenc_parse_uint64(const char* arg, uint64_t* value);
+
+/**
+ * Parses a non-negative timestamp from a command-line argument.
+ *
+ * @param arg
+ *     The string to parse.
+ *
+ * @param timestamp
+ *     A pointer to the timestamp in which the parsed value should be stored.
+ *
+ * @return
+ *     Zero if parsing was successful, non-zero if the provided string was
+ *     invalid or outside the range of guac_timestamp.
+ */
+int guacenc_parse_nonnegative_timestamp(const char* arg,
+        guac_timestamp* timestamp);
 
 /**
  * Parses a string of the form WIDTHxHEIGHT into individual width and height
@@ -79,4 +113,3 @@ int guacenc_parse_dimensions(char* arg, int* width, int* height);
 guac_timestamp guacenc_parse_timestamp(const char* str);
 
 #endif
-

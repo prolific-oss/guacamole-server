@@ -26,8 +26,16 @@
 #include <libavformat/avformat.h>
 
 #include <getopt.h>
+#include <inttypes.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
+
+enum guacenc_option {
+    GUACENC_OPTION_START_SYNC_INDEX = 0x100,
+    GUACENC_OPTION_END_SYNC_INDEX,
+    GUACENC_OPTION_TIMELINE_ORIGIN
+};
 
 int main(int argc, char* argv[]) {
 
@@ -39,9 +47,30 @@ int main(int argc, char* argv[]) {
     int height = GUACENC_DEFAULT_HEIGHT;
     int bitrate = GUACENC_DEFAULT_BITRATE;
 
+    /* Event window defaults */
+    guacenc_window window = {
+        .start_sync_index = 0,
+        .end_sync_index = UINT64_MAX,
+        .timeline_origin = 0
+    };
+    bool start_sync_index_set = false;
+    bool end_sync_index_set = false;
+    bool timeline_origin_set = false;
+
+    static const struct option long_options[] = {
+        {"start-sync-index", required_argument, NULL,
+            GUACENC_OPTION_START_SYNC_INDEX},
+        {"end-sync-index", required_argument, NULL,
+            GUACENC_OPTION_END_SYNC_INDEX},
+        {"timeline-origin", required_argument, NULL,
+            GUACENC_OPTION_TIMELINE_ORIGIN},
+        {NULL, 0, NULL, 0}
+    };
+
     /* Parse arguments */
     int opt;
-    while ((opt = getopt(argc, argv, "s:r:f")) != -1) {
+    while ((opt = getopt_long(argc, argv, "s:r:f",
+                    long_options, NULL)) != -1) {
 
         /* -s: Dimensions (WIDTHxHEIGHT) */
         if (opt == 's') {
@@ -63,11 +92,61 @@ int main(int argc, char* argv[]) {
         else if (opt == 'f')
             force = true;
 
+        /* --start-sync-index: First accepted display sync event to encode */
+        else if (opt == GUACENC_OPTION_START_SYNC_INDEX) {
+            if (guacenc_parse_uint64(optarg, &window.start_sync_index)) {
+                guacenc_log(GUAC_LOG_ERROR, "Invalid start sync index.");
+                goto invalid_options;
+            }
+            start_sync_index_set = true;
+        }
+
+        /* --end-sync-index: First accepted display sync event to omit */
+        else if (opt == GUACENC_OPTION_END_SYNC_INDEX) {
+            if (guacenc_parse_uint64(optarg, &window.end_sync_index)) {
+                guacenc_log(GUAC_LOG_ERROR, "Invalid end sync index.");
+                goto invalid_options;
+            }
+            end_sync_index_set = true;
+        }
+
+        /* --timeline-origin: First accepted display sync timestamp */
+        else if (opt == GUACENC_OPTION_TIMELINE_ORIGIN) {
+            if (guacenc_parse_nonnegative_timestamp(optarg,
+                        &window.timeline_origin)) {
+                guacenc_log(GUAC_LOG_ERROR, "Invalid timeline origin.");
+                goto invalid_options;
+            }
+            timeline_origin_set = true;
+        }
+
         /* Invalid option */
         else {
             goto invalid_options;
         }
 
+    }
+
+    /* Validate optional event window */
+    bool window_requested = start_sync_index_set
+                          || end_sync_index_set
+                          || timeline_origin_set;
+    if (window_requested && !timeline_origin_set) {
+        guacenc_log(GUAC_LOG_ERROR, "--timeline-origin is required when "
+                "encoding an event window.");
+        goto invalid_options;
+    }
+    if (timeline_origin_set
+            && !start_sync_index_set
+            && !end_sync_index_set) {
+        guacenc_log(GUAC_LOG_ERROR, "--timeline-origin requires "
+                "--start-sync-index or --end-sync-index.");
+        goto invalid_options;
+    }
+    if (window.end_sync_index <= window.start_sync_index) {
+        guacenc_log(GUAC_LOG_ERROR, "End sync index must be greater than "
+                "start sync index.");
+        goto invalid_options;
     }
 
     /* Log start */
@@ -98,6 +177,12 @@ int main(int argc, char* argv[]) {
     guacenc_log(GUAC_LOG_INFO, "Video will be encoded at %ix%i "
             "and %i bps.", width, height, bitrate);
 
+    if (window_requested)
+        guacenc_log(GUAC_LOG_INFO, "Encoding display sync events "
+                "[%" PRIu64 ", %" PRIu64 ") on timeline origin %" PRId64 ".",
+                window.start_sync_index, window.end_sync_index,
+                (int64_t) window.timeline_origin);
+
     /* Encode all input files */
     for (i = optind; i < argc; i++) {
 
@@ -117,7 +202,8 @@ int main(int argc, char* argv[]) {
 
         /* Attempt encoding, log granular success/failure at debug level */
         if (guacenc_encode(path, out_path, "mpeg4",
-                    width, height, bitrate, force)) {
+                    width, height, bitrate, force,
+                    window_requested ? &window : NULL)) {
             failures++;
             guacenc_log(GUAC_LOG_DEBUG,
                     "%s was NOT successfully encoded.", path);
@@ -146,9 +232,11 @@ invalid_options:
             " [-s WIDTHxHEIGHT]"
             " [-r BITRATE]"
             " [-f]"
+            " [--start-sync-index INDEX]"
+            " [--end-sync-index INDEX]"
+            " [--timeline-origin TIMESTAMP]"
             " [FILE]...\n", argv[0]);
 
     return 1;
 
 }
-

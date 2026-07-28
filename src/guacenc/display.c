@@ -84,7 +84,7 @@ cairo_operator_t guacenc_display_cairo_operator(guac_composite_mode mask) {
 }
 
 guacenc_display* guacenc_display_alloc(const char* path, const char* codec,
-        int width, int height, int bitrate) {
+        int width, int height, int bitrate, const guacenc_window* window) {
 
     /* Prepare video encoding */
     guacenc_video* video = guacenc_video_alloc(path, codec, width, height, bitrate);
@@ -97,6 +97,12 @@ guacenc_display* guacenc_display_alloc(const char* path, const char* codec,
 
     /* Associate display with video output */
     display->output = video;
+
+    /* Store optional event window */
+    if (window != NULL) {
+        display->window_enabled = true;
+        display->window = *window;
+    }
 
     /* Allocate special-purpose cursor layer */
     display->cursor = guacenc_cursor_alloc();
@@ -135,4 +141,3 @@ int guacenc_display_free(guacenc_display* display) {
     return retval;
 
 }
-

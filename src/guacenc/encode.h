@@ -20,6 +20,8 @@
 #ifndef GUACENC_ENCODE_H
 #define GUACENC_ENCODE_H
 
+#include "window.h"
+
 #include <stdbool.h>
 
 /**
@@ -52,12 +54,16 @@
  *     Perform the encoding, even if the input file appears to be an
  *     in-progress recording (has an associated lock).
  *
+ * @param window
+ *     The optional half-open range of accepted display sync events to encode,
+ *     or NULL to encode the complete recording.
+ *
  * @return
  *     Zero on success, non-zero if an error prevented successful encoding of
  *     the video.
  */
 int guacenc_encode(const char* path, const char* out_path, const char* codec,
-        int width, int height, int bitrate, bool force);
+        int width, int height, int bitrate, bool force,
+        const guacenc_window* window);
 
 #endif
-

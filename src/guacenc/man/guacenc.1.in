@@ -26,6 +26,9 @@ guacenc \- Guacamole video encoder
 [\fB-s\fR \fIWIDTH\fRx\fIHEIGHT\fR]
 [\fB-r\fR \fIBITRATE\fR]
 [\fB-f\fR]
+[\fB--start-sync-index\fR \fIINDEX\fR]
+[\fB--end-sync-index\fR \fIINDEX\fR]
+[\fB--timeline-origin\fR \fITIMESTAMP\fR]
 [\fIFILE\fR]...
 .
 .SH DESCRIPTION
@@ -75,6 +78,23 @@ Overrides the default behavior of
 .B guacenc
 such that input files will be encoded even if they appear to be recordings of
 in-progress Guacamole sessions.
+.TP
+\fB--start-sync-index\fR \fIINDEX\fR
+Replays, without rendering, all accepted display sync events before the given
+zero-based index. Encoding starts with the event at \fIINDEX\fR. Display sync
+events include both \fBsync\fR instructions and \fBmouse\fR instructions that
+carry a timestamp.
+.TP
+\fB--end-sync-index\fR \fIINDEX\fR
+Stops encoding immediately before the accepted display sync event at the given
+zero-based index. The encoded event range is half-open: the start index is
+included and the end index is excluded.
+.TP
+\fB--timeline-origin\fR \fITIMESTAMP\fR
+Sets the timestamp of the first accepted display sync event in the complete
+recording. This option is required when either sync-index option is used. All
+windows of one recording must use the same origin so their 25 FPS frame grids
+remain contiguous when concatenated.
 .
 .SH SEE ALSO
 .BR guaclog (1)

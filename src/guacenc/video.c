@@ -153,7 +153,9 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
 
     /* No frames have been written or prepared yet */
     video->last_timestamp = 0;
+    video->timeline_initialized = false;
     video->next_pts = 0;
+    video->suppress_final_frame = false;
 
     return video;
 
@@ -251,7 +253,7 @@ int guacenc_video_advance_timeline(guacenc_video* video,
     guac_timestamp next_timestamp = timestamp;
 
     /* Flush frames as necessary if previously updated */
-    if (video->last_timestamp != 0) {
+    if (video->timeline_initialized) {
 
         /* Calculate the number of frames that should have been written */
         int elapsed = (timestamp - video->last_timestamp)
@@ -278,6 +280,7 @@ int guacenc_video_advance_timeline(guacenc_video* video,
 
     /* Update timestamp */
     video->last_timestamp = next_timestamp;
+    video->timeline_initialized = true;
     return 0;
 
 }
@@ -471,8 +474,9 @@ int guacenc_video_free(guacenc_video* video) {
     if (video == NULL)
         return 0;
 
-    /* Write final frame */
-    guacenc_video_flush_frame(video);
+    /* Write final frame unless the window ended at an exact boundary */
+    if (!video->suppress_final_frame)
+        guacenc_video_flush_frame(video);
 
     /* Flush any unwritten frames */
     int retval;
@@ -509,4 +513,3 @@ int guacenc_video_free(guacenc_video* video) {
     return 0;
 
 }
-
