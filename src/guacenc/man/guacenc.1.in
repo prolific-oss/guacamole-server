@@ -82,7 +82,7 @@ in-progress Guacamole sessions.
 .TP
 \fB--h264\fR
 Encode raw Annex-B H.264 instead of MPEG-4 Part 2. The stream is fixed at 25
-frames per second with no B-frames, a 25-frame GOP, AUD access-unit delimiters,
+frames per second with no B-frames, a 30-frame GOP, AUD access-unit delimiters,
 and SPS/PPS repeated before each IDR frame.
 .TP
 \fB--start-sync-index\fR \fIINDEX\fR
@@ -99,7 +99,7 @@ included and the end index is excluded.
 \fB--timeline-origin\fR \fITIMESTAMP\fR
 Sets the timestamp of the first accepted display sync event in the complete
 recording. This option is required when either sync-index option is used. All
-windows of one recording must use the same origin so their 25 FPS frame grids
+windows of one recording must use the same origin so their 30 FPS frame grids
 remain contiguous when concatenated.
 .
 .SH SEE ALSO

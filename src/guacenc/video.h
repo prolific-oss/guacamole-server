@@ -40,7 +40,7 @@
 /**
  * The framerate at which video should be encoded, in frames per second.
  */
-#define GUACENC_VIDEO_FRAMERATE 25
+#define GUACENC_VIDEO_FRAMERATE 30
 
 /**
  * A video which is actively being encoded. Frames can be added to the video
