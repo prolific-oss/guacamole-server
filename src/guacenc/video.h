@@ -34,6 +34,7 @@
 #endif
 
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdio.h>
 
 /**
@@ -90,6 +91,16 @@ typedef struct guacenc_video {
     AVFrame* next_frame;
 
     /**
+     * Reusable RGB source frame used for color conversion and scaling.
+     */
+    AVFrame* source_frame;
+
+    /**
+     * Reusable software scaling context matching source/destination geometry.
+     */
+    struct SwsContext* sws_context;
+
+    /**
      * The presentation timestamp that should be used for the next frame. This
      * is equivalent to the frame number.
      */
@@ -100,6 +111,19 @@ typedef struct guacenc_video {
      * been added.
      */
     guac_timestamp last_timestamp;
+
+    /**
+     * Whether last_timestamp has been initialized. This is tracked separately
+     * because zero is a valid Guacamole timestamp.
+     */
+    bool timeline_initialized;
+
+    /**
+     * Whether the prepared final frame should be omitted during finalization.
+     * Intermediate event windows advance the prior frame to their exact end
+     * boundary and must not append the boundary event's frame.
+     */
+    bool suppress_final_frame;
 
 } guacenc_video;
 
@@ -190,4 +214,3 @@ void guacenc_video_prepare_frame(guacenc_video* video, guacenc_buffer* buffer);
 int guacenc_video_free(guacenc_video* video);
 
 #endif
-

@@ -67,6 +67,13 @@ static int guacenc_read_instructions(guacenc_display* display,
             guacenc_log(GUAC_LOG_DEBUG, "Handling of \"%s\" instruction "
                     "failed.", parser->opcode);
         }
+
+        /* A completed event window is a successful early end-of-input */
+        if (display->window_complete) {
+            guac_parser_free(parser);
+            return 0;
+        }
+
     }
 
     /* Fail on read/parse error */
@@ -84,7 +91,8 @@ static int guacenc_read_instructions(guacenc_display* display,
 }
 
 int guacenc_encode(const char* path, const char* out_path, const char* codec,
-        int width, int height, int bitrate, bool force) {
+        int width, int height, int bitrate, bool force,
+        const guacenc_window* window) {
 
     /* Open input file */
     int fd = open(path, O_RDONLY);
@@ -122,7 +130,7 @@ int guacenc_encode(const char* path, const char* out_path, const char* codec,
 
     /* Allocate display for encoding process */
     guacenc_display* display = guacenc_display_alloc(out_path, codec,
-            width, height, bitrate);
+            width, height, bitrate, window);
     if (display == NULL) {
         close(fd);
         return 1;
@@ -152,4 +160,3 @@ int guacenc_encode(const char* path, const char* out_path, const char* codec,
     return guacenc_display_free(display);
 
 }
-

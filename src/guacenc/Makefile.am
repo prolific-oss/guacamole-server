@@ -46,7 +46,8 @@ noinst_HEADERS =    \
     log.h           \
     parse.h         \
     png.h           \
-    video.h
+    video.h         \
+    window.h
 
 guacenc_SOURCES =           \
     buffer.c                \
@@ -111,4 +112,3 @@ guacenc_LDFLAGS =   \
 
 EXTRA_DIST =         \
     man/guacenc.1.in
-

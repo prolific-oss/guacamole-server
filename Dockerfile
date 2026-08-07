@@ -54,7 +54,7 @@ ARG WITH_FREERDP="${FREERDP_VERSION}(\.\d+)+"
 ARG WITH_LIBSSH2='libssh2-\d+(\.\d+)+'
 ARG WITH_LIBTELNET='\d+(\.\d+)+'
 ARG WITH_LIBVNCCLIENT='LibVNCServer-\d+(\.\d+)+'
-ARG WITH_LIBWEBSOCKETS='v\d+(\.\d+)+'
+ARG WITH_LIBWEBSOCKETS='v4\.5\.8'
 
 #
 # Default build options for each core protocol support library, as well as

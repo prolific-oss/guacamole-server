@@ -39,6 +39,56 @@ int guacenc_display_sync(guacenc_display* display, guac_timestamp timestamp) {
     /* Update timestamp of display */
     display->last_sync = timestamp;
 
+    /* Assign an index only to accepted, non-decreasing sync events */
+    uint64_t sync_index = display->sync_index++;
+
+    if (display->window_enabled) {
+
+        /*
+         * Stop before rendering the first event outside the half-open window.
+         * The previously-prepared frame remains visible through this event's
+         * timestamp.
+         */
+        if (sync_index >= display->window.end_sync_index) {
+            if (display->output->timeline_initialized
+                    && guacenc_video_advance_timeline(display->output,
+                        timestamp))
+                return 1;
+
+            display->output->suppress_final_frame = true;
+            display->window_complete = true;
+            return 0;
+        }
+
+        /*
+         * Instructions still mutate buffers, layers, and cursor state while
+         * replaying the prefix, but expensive render and encode work is
+         * skipped.
+         */
+        if (sync_index < display->window.start_sync_index)
+            return 0;
+
+        /*
+         * Preserve the frame phase of the complete recording. Independently
+         * anchoring each window would discard up to one 25 FPS frame at every
+         * boundary due to integer timestamp rounding.
+         */
+        if (!display->output->timeline_initialized) {
+            guac_timestamp origin = display->window.timeline_origin;
+            if (timestamp < origin) {
+                guacenc_log(GUAC_LOG_ERROR, "Window timeline origin is after "
+                        "sync event timestamp.");
+                return 1;
+            }
+
+            int frame_duration = 1000 / GUACENC_VIDEO_FRAMERATE;
+            display->output->last_timestamp = origin
+                + ((timestamp - origin) / frame_duration) * frame_duration;
+            display->output->timeline_initialized = true;
+        }
+
+    }
+
     /* Flatten display to default layer */
     if (guacenc_display_flatten(display))
         return 1;
@@ -56,4 +106,3 @@ int guacenc_display_sync(guacenc_display* display, guac_timestamp timestamp) {
     return 0;
 
 }
-

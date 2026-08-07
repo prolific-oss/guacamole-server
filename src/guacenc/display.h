@@ -25,10 +25,14 @@
 #include "image-stream.h"
 #include "layer.h"
 #include "video.h"
+#include "window.h"
 
 #include <cairo/cairo.h>
 #include <guacamole/protocol.h>
 #include <guacamole/timestamp.h>
+
+#include <stdbool.h>
+#include <stdint.h>
 
 /**
  * The maximum number of buffers that the Guacamole video encoder will handle
@@ -87,6 +91,27 @@ typedef struct guacenc_display {
      * yet been read.
      */
     guac_timestamp last_sync;
+
+    /**
+     * Zero-based index that will be assigned to the next accepted display
+     * sync event.
+     */
+    uint64_t sync_index;
+
+    /**
+     * Whether encoding is restricted to a configured event window.
+     */
+    bool window_enabled;
+
+    /**
+     * Event window being encoded, if window_enabled is true.
+     */
+    guacenc_window window;
+
+    /**
+     * Whether the configured event window has been fully read.
+     */
+    bool window_complete;
 
     /**
      * The video that this display is recording to.
@@ -154,7 +179,7 @@ int guacenc_display_flatten(guacenc_display* display);
  *     display could not be allocated.
  */
 guacenc_display* guacenc_display_alloc(const char* path, const char* codec,
-        int width, int height, int bitrate);
+        int width, int height, int bitrate, const guacenc_window* window);
 
 /**
  * Frees all memory associated with the given Guacamole video encoder display,
@@ -367,4 +392,3 @@ int guacenc_display_free_image_stream(guacenc_display* display, int index);
 cairo_operator_t guacenc_display_cairo_operator(guac_composite_mode mask);
 
 #endif
-
