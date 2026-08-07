@@ -356,24 +356,27 @@ static AVFrame* guacenc_video_frame_convert(guacenc_video* video,
     if (frame == NULL
             || frame->width != frame_width
             || frame->height != frame_height) {
+        AVFrame* replacement = av_frame_alloc();
+        if (replacement == NULL)
+            return NULL;
+
+        replacement->format = AV_PIX_FMT_RGB32;
+        replacement->width = frame_width;
+        replacement->height = frame_height;
+        if (av_image_alloc(replacement->data, replacement->linesize,
+                    replacement->width, replacement->height,
+                    replacement->format, 32) < 0) {
+            av_frame_free(&replacement);
+            return NULL;
+        }
+
+        /* Replace the old frame only after its replacement is fully ready */
         if (frame != NULL) {
             av_freep(&frame->data[0]);
             av_frame_free(&frame);
         }
 
-        frame = av_frame_alloc();
-        if (frame == NULL)
-            return NULL;
-
-        frame->format = AV_PIX_FMT_RGB32;
-        frame->width = frame_width;
-        frame->height = frame_height;
-        if (av_image_alloc(frame->data, frame->linesize, frame->width,
-                    frame->height, frame->format, 32) < 0) {
-            av_frame_free(&frame);
-            return NULL;
-        }
-
+        frame = replacement;
         video->source_frame = frame;
     }
 
@@ -509,8 +512,8 @@ int guacenc_video_free(guacenc_video* video) {
     if (video == NULL)
         return 0;
 
-    /* Write final frame unless the window ended at an exact boundary */
-    if (!video->suppress_final_frame)
+    /* Write final frame only if at least one frame was prepared */
+    if (video->timeline_initialized && !video->suppress_final_frame)
         guacenc_video_flush_frame(video);
 
     /* Flush any unwritten frames */
