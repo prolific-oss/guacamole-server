@@ -70,7 +70,7 @@ int guacenc_display_sync(guacenc_display* display, guac_timestamp timestamp) {
 
         /*
          * Preserve the frame phase of the complete recording. Independently
-         * anchoring each window would discard up to one 25 FPS frame at every
+         * anchoring each window would discard up to one 30 FPS frame at every
          * boundary due to integer timestamp rounding.
          */
         if (!display->output->timeline_initialized) {
