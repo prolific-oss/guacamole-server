@@ -81,10 +81,7 @@ int guacenc_display_sync(guacenc_display* display, guac_timestamp timestamp) {
                 return 1;
             }
 
-            int frame_duration = 1000 / GUACENC_VIDEO_FRAMERATE;
-            display->output->last_timestamp = origin
-                + ((timestamp - origin) / frame_duration) * frame_duration;
-            display->output->timeline_initialized = true;
+            guacenc_video_init_timeline(display->output, origin, timestamp);
         }
 
     }

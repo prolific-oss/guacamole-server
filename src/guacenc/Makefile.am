@@ -28,6 +28,7 @@ AUTOMAKE_OPTIONS = foreign
 AM_CPPFLAGS = -include config.h
 
 bin_PROGRAMS = guacenc
+SUBDIRS = . tests
 
 man_MANS =        \
     man/guacenc.1
@@ -47,6 +48,7 @@ noinst_HEADERS =    \
     parse.h         \
     png.h           \
     video.h         \
+    video-timeline.h \
     window.h
 
 guacenc_SOURCES =           \
@@ -82,7 +84,8 @@ guacenc_SOURCES =           \
     log.c                   \
     parse.c                 \
     png.c                   \
-    video.c
+    video.c                 \
+    video-timeline.c
 
 # Compile WebP support if available
 if ENABLE_WEBP
