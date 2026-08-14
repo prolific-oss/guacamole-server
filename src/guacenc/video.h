@@ -21,6 +21,7 @@
 #define GUACENC_VIDEO_H
 
 #include "buffer.h"
+#include "video-timeline.h"
 
 #include <guacamole/timestamp.h>
 #include <libavcodec/avcodec.h>
@@ -36,11 +37,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
-
-/**
- * The framerate at which video should be encoded, in frames per second.
- */
-#define GUACENC_VIDEO_FRAMERATE 30
 
 /**
  * A video which is actively being encoded. Frames can be added to the video
@@ -107,14 +103,17 @@ typedef struct guacenc_video {
     int64_t next_pts;
 
     /**
-     * The timestamp associated with the last frame, or 0 if no frames have yet
-     * been added.
+     * The timestamp corresponding to absolute video frame zero.
      */
-    guac_timestamp last_timestamp;
+    guac_timestamp timeline_origin;
 
     /**
-     * Whether last_timestamp has been initialized. This is tracked separately
-     * because zero is a valid Guacamole timestamp.
+     * The absolute CFR frame index reached by the most recent display sync.
+     */
+    uint64_t timeline_frame;
+
+    /**
+     * Whether the timeline origin and frame index have been initialized.
      */
     bool timeline_initialized;
 
@@ -153,6 +152,27 @@ typedef struct guacenc_video {
  */
 guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
         int width, int height, int bitrate);
+
+/**
+ * Initializes the video timeline against a shared origin. Windowed encodes use
+ * the first timestamp of the complete recording as their common origin so
+ * independently encoded windows retain identical CFR frame boundaries.
+ *
+ * @param video
+ *     The video whose timeline should be initialized.
+ *
+ * @param origin
+ *     The timestamp corresponding to absolute frame zero.
+ *
+ * @param timestamp
+ *     The timestamp at which this encoder begins. This must not precede origin.
+ *
+ * @return
+ *     Zero if the timeline was initialized successfully, non-zero if timestamp
+ *     precedes origin.
+ */
+int guacenc_video_init_timeline(guacenc_video* video,
+        guac_timestamp origin, guac_timestamp timestamp);
 
 /**
  * Advances the timeline of the encoding process to the given timestamp, such

@@ -81,7 +81,7 @@ such that input files will be encoded even if they appear to be recordings of
 in-progress Guacamole sessions.
 .TP
 \fB--h264\fR
-Encode raw Annex-B H.264 instead of MPEG-4 Part 2. The stream is fixed at 25
+Encode raw Annex-B H.264 instead of MPEG-4 Part 2. The stream is fixed at 30
 frames per second with no B-frames, a 30-frame GOP, AUD access-unit delimiters,
 and SPS/PPS repeated before each IDR frame.
 .TP

@@ -1479,6 +1479,7 @@ AC_CONFIG_FILES([Makefile
                  src/guacd/man/guacd.8
                  src/guacd/man/guacd.conf.5
                  src/guacenc/Makefile
+                 src/guacenc/tests/Makefile
                  src/guacenc/man/guacenc.1
                  src/guaclog/Makefile
                  src/guaclog/man/guaclog.1

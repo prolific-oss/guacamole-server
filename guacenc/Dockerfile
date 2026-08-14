@@ -17,6 +17,7 @@ RUN apk add --no-cache \
         automake \
         build-base \
         cairo-dev \
+        cunit-dev \
         ffmpeg-dev \
         libjpeg-turbo-dev \
         libpng-dev \
@@ -35,6 +36,7 @@ RUN autoreconf -fi \
         --disable-guacd \
         --disable-guaclog \
     && make -j"$(nproc)" \
+    && make -C src/guacenc check \
     && make install \
     && test -x /usr/local/bin/guacenc
 

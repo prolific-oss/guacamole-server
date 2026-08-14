@@ -113,11 +113,14 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
         avcodec_context->max_b_frames = 0;
         avcodec_context->thread_count = 1;
         av_dict_set(&codec_options, "preset", "ultrafast", 0);
-        av_dict_set(&codec_options, "x264-params",
-                "keyint=25:min-keyint=25:scenecut=0:"
+        char x264_params[160];
+        snprintf(x264_params, sizeof(x264_params),
+                "keyint=%d:min-keyint=%d:scenecut=0:"
                 "repeat-headers=1:aud=1:bframes=0:"
                 "sliced-threads=0:threads=1",
-                0);
+                GUACENC_VIDEO_FRAMERATE, GUACENC_VIDEO_FRAMERATE);
+        av_dict_set(&codec_options, "x264-params",
+                x264_params, 0);
     }
 
     /* Open codec for use */
@@ -180,7 +183,8 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
     video->bitrate = bitrate;
 
     /* No frames have been written or prepared yet */
-    video->last_timestamp = 0;
+    video->timeline_origin = 0;
+    video->timeline_frame = 0;
     video->timeline_initialized = false;
     video->next_pts = 0;
     video->suppress_final_frame = false;
@@ -275,40 +279,56 @@ static int guacenc_video_flush_frame(guacenc_video* video) {
 
 }
 
+int guacenc_video_init_timeline(guacenc_video* video,
+        guac_timestamp origin, guac_timestamp timestamp) {
+
+    uint64_t frame_index;
+    if (!guacenc_video_frame_index(origin, timestamp, &frame_index)) {
+        guacenc_log(GUAC_LOG_ERROR, "Timeline origin is after display sync "
+                "timestamp.");
+        return 1;
+    }
+
+    video->timeline_origin = origin;
+    video->timeline_frame = frame_index;
+    video->timeline_initialized = true;
+    return 0;
+
+}
+
 int guacenc_video_advance_timeline(guacenc_video* video,
         guac_timestamp timestamp) {
 
-    guac_timestamp next_timestamp = timestamp;
+    /* The first accepted event defines frame zero for monolithic encodes. */
+    if (!video->timeline_initialized
+            && guacenc_video_init_timeline(video, timestamp, timestamp))
+        return 1;
 
-    /* Flush frames as necessary if previously updated */
-    if (video->timeline_initialized) {
+    uint64_t target_frame;
+    if (!guacenc_video_frame_index(video->timeline_origin, timestamp,
+                &target_frame)) {
+        guacenc_log(GUAC_LOG_ERROR, "Display sync timestamp precedes timeline "
+                "origin.");
+        return 1;
+    }
+    if (target_frame < video->timeline_frame) {
+        guacenc_log(GUAC_LOG_ERROR, "Display sync timestamp moves video "
+                "timeline backwards.");
+        return 1;
+    }
+    uint64_t elapsed = target_frame - video->timeline_frame;
 
-        /* Calculate the number of frames that should have been written */
-        int elapsed = (timestamp - video->last_timestamp)
-                    * GUACENC_VIDEO_FRAMERATE / 1000;
-
-        /* Keep previous timestamp if insufficient time has elapsed */
-        if (elapsed == 0)
-            return 0;
-
-        /* Use frame time as last_timestamp */
-        next_timestamp = video->last_timestamp
-                        + elapsed * 1000 / GUACENC_VIDEO_FRAMERATE;
-
-        /* Flush frames to bring timeline in sync, duplicating if necessary */
-        do {
-            if (guacenc_video_flush_frame(video)) {
-                guacenc_log(GUAC_LOG_ERROR, "Unable to flush frame to video "
-                        "stream.");
-                return 1;
-            }
-        } while (--elapsed != 0);
-
+    /* Flush frames to bring timeline in sync, duplicating if necessary. */
+    while (elapsed > 0) {
+        if (guacenc_video_flush_frame(video)) {
+            guacenc_log(GUAC_LOG_ERROR, "Unable to flush frame to video "
+                    "stream.");
+            return 1;
+        }
+        elapsed--;
     }
 
-    /* Update timestamp */
-    video->last_timestamp = next_timestamp;
-    video->timeline_initialized = true;
+    video->timeline_frame = target_frame;
     return 0;
 
 }
