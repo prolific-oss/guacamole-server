@@ -81,7 +81,9 @@ int guacenc_display_sync(guacenc_display* display, guac_timestamp timestamp) {
                 return 1;
             }
 
-            guacenc_video_init_timeline(display->output, origin, timestamp);
+            if (guacenc_video_init_timeline(display->output, origin,
+                        timestamp))
+                return 1;
         }
 
     }

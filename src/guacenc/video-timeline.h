@@ -22,6 +22,7 @@
 
 #include <guacamole/timestamp.h>
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /**
@@ -41,10 +42,14 @@
  * @param timestamp
  *     The timestamp to convert. This must not precede origin.
  *
+ * @param frame_index
+ *     Storage for the zero-based frame index containing timestamp.
+ *
  * @return
- *     The zero-based frame index containing timestamp.
+ *     true if timestamp was valid and frame_index was written, false if
+ *     timestamp precedes origin or frame_index is NULL.
  */
-uint64_t guacenc_video_frame_index(guac_timestamp origin,
-        guac_timestamp timestamp);
+bool guacenc_video_frame_index(guac_timestamp origin,
+        guac_timestamp timestamp, uint64_t* frame_index);
 
 #endif

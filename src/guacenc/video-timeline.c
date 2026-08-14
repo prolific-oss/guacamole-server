@@ -19,14 +19,15 @@
 
 #include "video-timeline.h"
 
-#include <assert.h>
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
-uint64_t guacenc_video_frame_index(guac_timestamp origin,
-        guac_timestamp timestamp) {
+bool guacenc_video_frame_index(guac_timestamp origin,
+        guac_timestamp timestamp, uint64_t* frame_index) {
 
-    /* Timestamps are validated by the display before reaching the encoder. */
-    assert(timestamp >= origin);
+    if (timestamp < origin || frame_index == NULL)
+        return false;
 
     /*
      * Split whole seconds from the millisecond remainder before multiplying.
@@ -34,7 +35,8 @@ uint64_t guacenc_video_frame_index(guac_timestamp origin,
      * realistic long-running Guacamole timestamps.
      */
     uint64_t elapsed = (uint64_t) (timestamp - origin);
-    return (elapsed / 1000) * GUACENC_VIDEO_FRAMERATE
+    *frame_index = (elapsed / 1000) * GUACENC_VIDEO_FRAMERATE
         + (elapsed % 1000) * GUACENC_VIDEO_FRAMERATE / 1000;
+    return true;
 
 }

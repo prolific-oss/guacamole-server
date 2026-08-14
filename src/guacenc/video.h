@@ -166,8 +166,12 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
  *
  * @param timestamp
  *     The timestamp at which this encoder begins. This must not precede origin.
+ *
+ * @return
+ *     Zero if the timeline was initialized successfully, non-zero if timestamp
+ *     precedes origin.
  */
-void guacenc_video_init_timeline(guacenc_video* video,
+int guacenc_video_init_timeline(guacenc_video* video,
         guac_timestamp origin, guac_timestamp timestamp);
 
 /**

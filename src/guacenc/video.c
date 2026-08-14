@@ -279,13 +279,20 @@ static int guacenc_video_flush_frame(guacenc_video* video) {
 
 }
 
-void guacenc_video_init_timeline(guacenc_video* video,
+int guacenc_video_init_timeline(guacenc_video* video,
         guac_timestamp origin, guac_timestamp timestamp) {
 
-    assert(timestamp >= origin);
+    uint64_t frame_index;
+    if (!guacenc_video_frame_index(origin, timestamp, &frame_index)) {
+        guacenc_log(GUAC_LOG_ERROR, "Timeline origin is after display sync "
+                "timestamp.");
+        return 1;
+    }
+
     video->timeline_origin = origin;
-    video->timeline_frame = guacenc_video_frame_index(origin, timestamp);
+    video->timeline_frame = frame_index;
     video->timeline_initialized = true;
+    return 0;
 
 }
 
@@ -293,11 +300,22 @@ int guacenc_video_advance_timeline(guacenc_video* video,
         guac_timestamp timestamp) {
 
     /* The first accepted event defines frame zero for monolithic encodes. */
-    if (!video->timeline_initialized)
-        guacenc_video_init_timeline(video, timestamp, timestamp);
+    if (!video->timeline_initialized
+            && guacenc_video_init_timeline(video, timestamp, timestamp))
+        return 1;
 
-    uint64_t target_frame = guacenc_video_frame_index(
-            video->timeline_origin, timestamp);
+    uint64_t target_frame;
+    if (!guacenc_video_frame_index(video->timeline_origin, timestamp,
+                &target_frame)) {
+        guacenc_log(GUAC_LOG_ERROR, "Display sync timestamp precedes timeline "
+                "origin.");
+        return 1;
+    }
+    if (target_frame < video->timeline_frame) {
+        guacenc_log(GUAC_LOG_ERROR, "Display sync timestamp moves video "
+                "timeline backwards.");
+        return 1;
+    }
     uint64_t elapsed = target_frame - video->timeline_frame;
 
     /* Flush frames to bring timeline in sync, duplicating if necessary. */
