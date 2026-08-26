@@ -29,7 +29,7 @@
  * The number of milliseconds to wait for messages in any phase before
  * timing out and closing the connection with an error.
  */
-#define GUACD_TIMEOUT 15000
+#define GUACD_TIMEOUT 45000
 
 /**
  * The number of microseconds to wait for messages in any phase before
@@ -104,4 +104,3 @@ guacd_proc* guacd_create_proc(const char* protocol);
 void guacd_proc_stop(guacd_proc* proc);
 
 #endif
-

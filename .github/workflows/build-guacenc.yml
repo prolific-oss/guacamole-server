@@ -1,4 +1,4 @@
-name: Build and push guacenc image
+name: Build and push Guacamole images
 
 on:
   pull_request:
@@ -7,13 +7,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: guacenc-${{ github.ref }}
+  group: guacamole-images-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   REGISTRY_HOST: us-east1-docker.pkg.dev
   REGISTRY_REPOSITORY: prolific-infra-mgmt/desktop-trajectory-capture
-  IMAGE_NAME: guacenc
   GCP_SERVICE_ACCOUNT: ci-github-nonprod@prolific-infra-mgmt.iam.gserviceaccount.com
   WORKLOAD_IDENTITY_PROVIDER: projects/274607699786/locations/global/workloadIdentityPools/github-actions/providers/github-actions-prvdr
 
@@ -27,7 +26,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image_id: ${{ steps.set-image-id.outputs.image_id }}
-      image_ref: ${{ steps.set-image-id.outputs.image_ref }}
       is_main: ${{ steps.set-image-id.outputs.is_main }}
     steps:
       - uses: actions/checkout@v4
@@ -37,8 +35,6 @@ jobs:
         run: |
           set -euo pipefail
           SHORT_SHA=$(git rev-parse --short=7 HEAD)
-          IMAGE_BASE="${{ env.REGISTRY_HOST }}/${{ env.REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}"
-
           # Docker tags: lowercase [a-z0-9_.-], max 128 chars.
           sanitize_tag() {
             echo "$1" \
@@ -66,13 +62,11 @@ jobs:
           fi
 
           echo "image_id=${IMAGE_ID}" >> "$GITHUB_OUTPUT"
-          echo "image_ref=${IMAGE_BASE}:${IMAGE_ID}" >> "$GITHUB_OUTPUT"
           echo "is_main=${IS_MAIN}" >> "$GITHUB_OUTPUT"
           echo "IMAGE_ID=${IMAGE_ID}"
-          echo "IMAGE_REF=${IMAGE_BASE}:${IMAGE_ID}"
 
   build:
-    name: Build ${{ matrix.platform }}
+    name: Build ${{ matrix.image_name }} (${{ matrix.platform }})
     needs: [meta]
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -82,9 +76,23 @@ jobs:
           - runner: ubuntu-latest
             platform: linux/amd64
             arch: amd64
+            image_name: guacenc
+            dockerfile: guacenc/Dockerfile
           - runner: ubuntu-24.04-arm
             platform: linux/arm64
             arch: arm64
+            image_name: guacenc
+            dockerfile: guacenc/Dockerfile
+          - runner: ubuntu-latest
+            platform: linux/amd64
+            arch: amd64
+            image_name: guacd
+            dockerfile: Dockerfile
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            arch: arm64
+            image_name: guacd
+            dockerfile: Dockerfile
     steps:
       - uses: actions/checkout@v4
 
@@ -112,9 +120,9 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: guacenc/Dockerfile
+          file: ${{ matrix.dockerfile }}
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=${{ env.REGISTRY_HOST }}/${{ env.REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY_HOST }}/${{ env.REGISTRY_REPOSITORY }}/${{ matrix.image_name }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             IMAGE_ID=${{ needs.meta.outputs.image_id }}
 
@@ -127,21 +135,24 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@v4
         with:
-          name: digests-${{ matrix.arch }}
+          name: digests-${{ matrix.image_name }}-${{ matrix.arch }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
 
   merge:
-    name: Merge multi-arch manifest
+    name: Merge ${{ matrix.image_name }} multi-arch manifest
     needs: [meta, build]
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image_name: [guacenc, guacd]
     steps:
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
           path: /tmp/digests
-          pattern: digests-*
+          pattern: digests-${{ matrix.image_name }}-*
           merge-multiple: true
 
       - name: Authenticate to GCP
@@ -164,8 +175,8 @@ jobs:
 
       - name: Create manifest and push tags
         env:
-          IMAGE_REF: ${{ needs.meta.outputs.image_ref }}
-          IMAGE_BASE: ${{ env.REGISTRY_HOST }}/${{ env.REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}
+          IMAGE_REF: ${{ env.REGISTRY_HOST }}/${{ env.REGISTRY_REPOSITORY }}/${{ matrix.image_name }}:${{ needs.meta.outputs.image_id }}
+          IMAGE_BASE: ${{ env.REGISTRY_HOST }}/${{ env.REGISTRY_REPOSITORY }}/${{ matrix.image_name }}
           IS_MAIN: ${{ needs.meta.outputs.is_main }}
           EXPECTED_DIGESTS: "2"
         run: |
