@@ -1476,6 +1476,7 @@ AC_CONFIG_FILES([Makefile
                  src/libguac/Makefile
                  src/libguac/tests/Makefile
                  src/guacd/Makefile
+                 src/guacd/tests/Makefile
                  src/guacd/man/guacd.8
                  src/guacd/man/guacd.conf.5
                  src/guacenc/Makefile
