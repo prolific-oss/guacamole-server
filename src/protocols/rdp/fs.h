@@ -232,10 +232,8 @@ typedef struct guac_rdp_fs_info {
     /**
      * The number of free blocks available.
      *
-     * Stored as 64-bit to match RDPDR FileFsSizeInformation. Values that
-     * would not fit in a signed 32-bit count are scaled in
-     * guac_rdp_fs_get_info() so older 32-bit consumers still see non-zero
-     * free space.
+     * 64-bit to match RDPDR FileFsSizeInformation and avoid truncating
+     * large backends (for example gcsfuse's 1 PiB) to zero.
      */
     uint64_t blocks_available;
 

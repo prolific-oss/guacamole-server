@@ -37,7 +37,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <fnmatch.h>
-#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -742,42 +741,6 @@ int guac_rdp_fs_matches(const char* filename, const char* pattern) {
     return fnmatch(pattern, filename, FNM_NOESCAPE) != 0;
 }
 
-/**
- * Keep reported capacity identical for small filesystems, but fold huge
- * block counts into a larger block size so the counts fit in signed 32-bit
- * integers. gcsfuse advertises 2^33 blocks (1 PiB). Truncating that to 32
- * bits yields 0, which makes Windows Explorer refuse copies onto an RDP
- * redirected drive. The RDPDR reply is already UINT64; scaling also keeps
- * 32-bit readers (historical int fields, or a client that truncates) from
- * seeing zero free space. Filesystems whose counts already fit are unchanged.
- */
-static void guac_rdp_fs_fit_info_to_int32(guac_rdp_fs_info* info) {
-
-    uint64_t blocks_total = info->blocks_total;
-    uint64_t blocks_available = info->blocks_available;
-    uint64_t block_size = info->block_size > 0 ? (uint64_t) info->block_size : 4096;
-
-    while ((blocks_total > (uint64_t) INT32_MAX
-                || blocks_available > (uint64_t) INT32_MAX)
-            && block_size <= (uint64_t) INT32_MAX / 2) {
-        blocks_total /= 2;
-        blocks_available /= 2;
-        block_size *= 2;
-    }
-
-    if (blocks_total > (uint64_t) INT32_MAX)
-        blocks_total = (uint64_t) INT32_MAX;
-    if (blocks_available > (uint64_t) INT32_MAX)
-        blocks_available = (uint64_t) INT32_MAX;
-    if (block_size > (uint64_t) INT32_MAX)
-        block_size = (uint64_t) INT32_MAX;
-
-    info->blocks_total = blocks_total;
-    info->blocks_available = blocks_available;
-    info->block_size = (int) block_size;
-
-}
-
 int guac_rdp_fs_get_info(guac_rdp_fs* fs, guac_rdp_fs_info* info) {
 
     /* Read FS information */
@@ -789,7 +752,6 @@ int guac_rdp_fs_get_info(guac_rdp_fs* fs, guac_rdp_fs_info* info) {
     info->blocks_available = fs_stat.f_bfree;
     info->blocks_total = fs_stat.f_blocks;
     info->block_size = fs_stat.f_bsize;
-    guac_rdp_fs_fit_info_to_int32(info);
     return 0;
 
 }
