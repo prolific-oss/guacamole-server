@@ -49,6 +49,17 @@ positive number of milliseconds to override this value:
 
 An explicit `-T` command-line option takes precedence over `CLIENT_TIMEOUT`.
 
+Configuring the RDP drive open-file limit
+-----------------------------------------
+
+By default, each RDP session may keep 128 files open on the redirected drive.
+Set `GUAC_RDP_FS_MAX_FILES` to a positive integer no greater than 4096 to
+override this value:
+
+    docker run --name some-guacd -d -e GUAC_RDP_FS_MAX_FILES=1024 guacamole/guacd
+
+Invalid values are ignored and the default of 128 is used.
+
 Reporting issues
 ================
 
