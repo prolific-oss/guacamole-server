@@ -107,7 +107,12 @@ guac_rdp_fs* guac_rdp_fs_alloc(guac_client* client, const char* drive_path,
         }
     }
 
-    guac_rdp_fs* fs = guac_mem_alloc(sizeof(guac_rdp_fs));
+    guac_rdp_fs* fs = guac_mem_zalloc(sizeof(guac_rdp_fs));
+    if (fs == NULL) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Unable to allocate RDP filesystem");
+        return NULL;
+    }
 
     fs->client = client;
     fs->drive_path = guac_strdup(drive_path);
@@ -118,6 +123,14 @@ guac_rdp_fs* guac_rdp_fs_alloc(guac_client* client, const char* drive_path,
     fs->disable_download = disable_download;
     fs->disable_upload = disable_upload;
 
+    if (fs->drive_path == NULL || fs->file_id_pool == NULL || fs->files == NULL) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Unable to allocate RDP filesystem open-file table (limit %i)",
+                fs->max_files);
+        guac_rdp_fs_free(fs);
+        return NULL;
+    }
+
     guac_client_log(client, GUAC_LOG_DEBUG,
             "RDP filesystem open-file limit is %i", fs->max_files);
 
@@ -126,7 +139,13 @@ guac_rdp_fs* guac_rdp_fs_alloc(guac_client* client, const char* drive_path,
 }
 
 void guac_rdp_fs_free(guac_rdp_fs* fs) {
-    guac_pool_free(fs->file_id_pool);
+
+    if (fs == NULL)
+        return;
+
+    if (fs->file_id_pool != NULL)
+        guac_pool_free(fs->file_id_pool);
+
     guac_mem_free(fs->drive_path);
     guac_mem_free(fs->files);
     guac_mem_free(fs);

@@ -286,7 +286,7 @@ typedef struct guac_rdp_fs_info {
  *     disabled.
  *
  * @return
- *     The newly-allocated filesystem.
+ *     The newly-allocated filesystem, or NULL if allocation fails.
  */
 guac_rdp_fs* guac_rdp_fs_alloc(guac_client* client, const char* drive_path,
         int create_drive_path, int disable_download, int disable_upload);
